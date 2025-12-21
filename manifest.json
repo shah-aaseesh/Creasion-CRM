@@ -1,0 +1,25 @@
+{
+  "short_name": "CREASION",
+  "name": "CREASION CRM Portal",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9322/9322127.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9322/9322127.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9322/9322127.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#4f46e5",
+  "background_color": "#0f172a"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "CREASION CRM",
+  "description": "A professional-grade personal CRM for managing clients, domains, hosting, and additional web services with Supabase cloud persistence.",
+  "requestFramePermissions": []
+}
