@@ -30,7 +30,6 @@
       -webkit-tap-highlight-color: transparent;
     }
     
-    /* Custom scrollbar for better aesthetics */
     ::-webkit-scrollbar {
       width: 8px;
     }
@@ -45,13 +44,11 @@
       background: #94a3b8;
     }
 
-    /* Prevent text selection on UI elements for a more native feel */
     .no-select {
       user-select: none;
       -webkit-user-select: none;
     }
 
-    /* Smooth transitions for modal and interactions */
     .modal-enter {
       opacity: 0;
       transform: scale(0.95);
@@ -76,5 +73,7 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- CRITICAL: Bootstraps the application on static hosts like Vercel -->
+  <script type="module" src="index.tsx"></script>
 </body>
 </html>

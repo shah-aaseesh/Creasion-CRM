@@ -1,5 +1,4 @@
-
-import { ExpiryStatus, Currency } from '../types';
+import { ExpiryStatus, Currency } from '../types.ts';
 
 export const formatCurrency = (amount: number, currency: Currency = 'INR') => {
   const locale = currency === 'NPR' ? 'ne-NP' : 'en-IN';
