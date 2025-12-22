@@ -21,6 +21,25 @@ export interface AdditionalService {
   expiry?: string;
 }
 
+export interface HostedSite {
+  id: string;
+  url: string;
+  notes?: string;
+}
+
+export interface HostingHubPlan {
+  id: string;
+  planName: string;
+  provider: string;
+  expiryDate: string;
+  cost: number;
+  costCurrency: Currency;
+  charge: number;
+  chargeCurrency: Currency;
+  sites: HostedSite[];
+  notes: string;
+}
+
 export interface Service {
   id: string;
   clientId: string;
@@ -68,6 +87,7 @@ export interface Credential {
 export interface AppData {
   clients: Client[];
   services: Service[];
+  hostingPlans: HostingHubPlan[]; // New Hub data
   credentials: Credential[];
   settings: {
     masterPasswordHash: string;
