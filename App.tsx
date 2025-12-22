@@ -33,7 +33,9 @@ import {
   Copy,
   User,
   PlusSquare,
-  MinusCircle
+  MinusCircle,
+  ExternalLink,
+  Calendar
 } from 'lucide-react';
 import { createClient, User as SupabaseUser } from '@supabase/supabase-js';
 import { AppData, Service, ServiceType, Currency, ExpiryStatus, AdditionalService } from './types.ts';
@@ -338,6 +340,12 @@ const App: React.FC = () => {
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
+  const filteredServices = useMemo(() => {
+    return data.services.filter(s => 
+      (s.domainName || s.hostingPlan || s.clientId || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [data.services, searchTerm]);
+
   if (!user) {
     return (
       <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-4">
@@ -394,6 +402,76 @@ const App: React.FC = () => {
     );
   }
 
+  const renderExpandedContent = (service: Service) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-10">
+      <div className="space-y-6">
+        <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+          <Globe size={14} className="text-indigo-500"/> INFRASTRUCTURE
+        </h4>
+        <div className="bg-white p-5 md:p-6 rounded-3xl border-2 border-slate-100 space-y-4 shadow-sm relative overflow-hidden">
+            {(service.type === 'domain' || service.type === 'both') && (
+              <div className="space-y-4 border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                <p className="text-base md:text-lg font-black text-slate-900 tracking-tighter break-all">
+                  {service.domainName} <span className="text-[10px] text-slate-400 font-bold">({service.registrar})</span>
+                </p>
+                <div className="flex justify-between gap-4">
+                  <div className="flex-1"><p className="text-[9px] font-black text-slate-400 uppercase">INTERNAL COST</p><p className="text-xs md:text-sm font-black text-slate-800">{formatCurrency(service.domainCost || 0, service.domainCostCurrency)}</p></div>
+                  <div className="flex-1 text-right"><p className="text-[9px] font-black text-indigo-600 uppercase">RENEWAL CHARGE</p><p className="text-xs md:text-sm font-black text-indigo-700">{formatCurrency(service.domainCharge || 0, service.domainChargeCurrency)}</p></div>
+                </div>
+              </div>
+            )}
+            {(service.type === 'hosting' || service.type === 'both') && (
+              <div className="space-y-4">
+                <p className="text-base md:text-lg font-black text-slate-900 tracking-tighter break-all">
+                  {service.hostingPlan} <span className="text-[10px] text-slate-400 font-bold">({service.hostingProvider})</span>
+                </p>
+                <p className="text-[10px] font-mono bg-slate-50 p-2 rounded-lg text-slate-500 flex items-center gap-2 truncate">
+                  <Database size={10} /> {service.hostingServerIp || '0.0.0.0'}
+                </p>
+                <div className="flex justify-between gap-4">
+                  <div className="flex-1"><p className="text-[9px] font-black text-slate-400 uppercase">INTERNAL COST</p><p className="text-xs md:text-sm font-black text-slate-800">{formatCurrency(service.hostingCost || 0, service.hostingCostCurrency)}</p></div>
+                  <div className="flex-1 text-right"><p className="text-[9px] font-black text-indigo-600 uppercase">RENEWAL CHARGE</p><p className="text-xs md:text-sm font-black text-indigo-700">{formatCurrency(service.hostingCharge || 0, service.hostingChargeCurrency)}</p></div>
+                </div>
+              </div>
+            )}
+        </div>
+      </div>
+      <div className="space-y-6">
+        <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+          <PlusCircle size={14} className="text-indigo-500"/> ADDITIONAL ASSETS
+        </h4>
+        <div className="space-y-4">
+          {service.additionalServices?.length ? service.additionalServices.map((as, i) => (
+            <div key={i} className="bg-white p-5 md:p-6 rounded-3xl border-2 border-slate-100 space-y-3 shadow-sm">
+              <div className="flex justify-between items-start gap-2">
+                <p className="font-black text-slate-900 text-sm md:text-md tracking-tight truncate">{as.name}</p>
+                <p className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg shrink-0">
+                  {formatCurrency(as.charge, as.chargeCurrency)}
+                </p>
+              </div>
+              {as.expiry && (
+                <p className="text-[9px] font-black text-slate-400 flex items-center gap-1 uppercase">
+                  <Clock size={10}/> Expiry: {as.expiry}
+                </p>
+              )}
+            </div>
+          )) : <p className="text-xs text-slate-400 italic font-medium">No additional assets linked.</p>}
+        </div>
+      </div>
+      <div className="space-y-6 md:col-span-2 xl:col-span-1">
+        <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+          <Info size={14} className="text-indigo-500"/> SYSTEM JOURNAL
+        </h4>
+        <div className="bg-slate-900 text-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-xl min-h-[150px] relative overflow-hidden">
+            <p className="relative z-10 text-xs md:text-sm font-medium leading-relaxed opacity-90 italic whitespace-pre-wrap">
+              {service.notes || 'No journal entries for this asset.'}
+            </p>
+            <div className="absolute bottom-0 right-0 p-8 opacity-5 pointer-events-none"><Database size={100}/></div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans no-select relative">
       <input type="file" ref={fileInputRef} onChange={importFromJson} accept=".json" className="hidden" />
@@ -441,16 +519,24 @@ const App: React.FC = () => {
         <header className="bg-white h-20 border-b flex items-center justify-between px-4 md:px-10 shrink-0 z-10 shadow-sm">
           <div className="flex items-center space-x-3 md:space-x-8">
             <button onClick={toggleMobileMenu} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl"><Menu size={24} /></button>
-            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{activeTab === 'services' ? 'Inventory' : 'Dashboard'}</h2>
-            <div className="hidden lg:relative lg:block">
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight shrink-0">{activeTab === 'services' ? 'Inventory' : 'Dashboard'}</h2>
+            <div className="hidden lg:relative lg:block flex-1 max-w-lg">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input type="text" placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-6 py-2.5 border-2 border-slate-100 text-slate-900 rounded-2xl text-sm focus:border-indigo-500 bg-slate-50 w-80 font-medium outline-none transition-all" />
+              <input type="text" placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-6 py-2.5 border-2 border-slate-100 text-slate-900 rounded-2xl text-sm focus:border-indigo-500 bg-slate-50 w-full font-medium outline-none transition-all" />
             </div>
           </div>
-          <button onClick={() => openProvisionModal()} className="bg-indigo-600 text-white p-2.5 md:px-8 md:py-3.5 rounded-xl md:rounded-2xl flex items-center space-x-3 hover:bg-indigo-700 shadow-xl shadow-indigo-100 font-black uppercase text-[10px] md:text-xs tracking-widest transition-all">
+          <button onClick={() => openProvisionModal()} className="bg-indigo-600 text-white p-2.5 md:px-8 md:py-3.5 rounded-xl md:rounded-2xl flex items-center space-x-3 hover:bg-indigo-700 shadow-xl shadow-indigo-100 font-black uppercase text-[10px] md:text-xs tracking-widest transition-all shrink-0">
             <Plus size={20} className="stroke-[3]" /> <span className="hidden md:inline">Provision New</span>
           </button>
         </header>
+
+        {/* Responsive Search for Mobile */}
+        <div className="lg:hidden bg-white px-4 py-3 border-b shadow-sm">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input type="text" placeholder="Search inventory..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border-2 border-slate-100 bg-slate-50 rounded-xl text-xs w-full outline-none focus:border-indigo-500 font-medium" />
+          </div>
+        </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-10">
           {activeTab === 'dashboard' ? (
@@ -488,9 +574,10 @@ const App: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[600px]">
+            <div className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden">
+              {/* Desktop View: Table */}
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full text-left min-w-[800px]">
                   <thead className="bg-slate-50/80 border-b-2 border-slate-100">
                     <tr>
                       <th className="px-6 py-6 w-14"></th>
@@ -501,7 +588,7 @@ const App: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {data.services.filter(s => (s.domainName || s.hostingPlan || s.clientId || '').toLowerCase().includes(searchTerm.toLowerCase())).map(service => {
+                    {filteredServices.map(service => {
                       const isExpanded = !!expandedRows[service.id];
                       const allExpiries = [service.domainExpiry, service.hostingExpiry, ...(service.additionalServices?.map(as => as.expiry) || [])].filter(Boolean) as string[];
                       const nextExpiry = allExpiries.length > 0 ? allExpiries.reduce((a, b) => new Date(a) < new Date(b) ? a : b) : null;
@@ -510,7 +597,7 @@ const App: React.FC = () => {
                           <tr className={`hover:bg-slate-50 transition-all cursor-pointer ${isExpanded ? 'bg-indigo-50/30' : ''}`} onClick={() => toggleRow(service.id)}>
                             <td className="px-6 py-6 text-slate-400">{isExpanded ? <ChevronUp size={20} className="stroke-[3]" /> : <ChevronDown size={20} className="stroke-[3]" />}</td>
                             <td className="px-6 py-6">
-                              <p className="font-black text-slate-900 tracking-tighter text-lg leading-tight">{service.domainName || service.hostingPlan || 'Custom Service'}</p>
+                              <p className="font-black text-slate-900 tracking-tighter text-lg leading-tight truncate max-w-xs">{service.domainName || service.hostingPlan || 'Custom Service'}</p>
                               <p className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1 mt-1"><User size={10} /> {service.clientId}</p>
                             </td>
                             <td className="px-6 py-6"><div className="flex gap-2"><span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg border bg-white border-slate-200 text-slate-600`}>{service.type}</span></div></td>
@@ -523,57 +610,71 @@ const App: React.FC = () => {
                             </td>
                           </tr>
                           {isExpanded && (
-                            <tr className="bg-slate-50/50"><td colSpan={5} className="px-10 py-10 border-l-4 border-indigo-500">
-                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-                                    <div className="space-y-6">
-                                      <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2"><Globe size={14} className="text-indigo-500"/> INFRASTRUCTURE</h4>
-                                      <div className="bg-white p-6 rounded-3xl border-2 border-slate-100 space-y-4 shadow-sm relative overflow-hidden">
-                                          {(service.type === 'domain' || service.type === 'both') && (
-                                            <div className="space-y-4 border-b border-slate-100 pb-4 last:border-0 last:pb-0">
-                                              <p className="text-lg font-black text-slate-900 tracking-tighter">{service.domainName} <span className="text-[10px] text-slate-400 font-bold">({service.registrar})</span></p>
-                                              <div className="flex justify-between gap-4">
-                                                <div className="flex-1"><p className="text-[9px] font-black text-slate-400 uppercase">INTERNAL COST</p><p className="text-sm font-black text-slate-800">{formatCurrency(service.domainCost || 0, service.domainCostCurrency)}</p></div>
-                                                <div className="flex-1 text-right"><p className="text-[9px] font-black text-indigo-600 uppercase">RENEWAL CHARGE</p><p className="text-sm font-black text-indigo-700">{formatCurrency(service.domainCharge || 0, service.domainChargeCurrency)}</p></div>
-                                              </div>
-                                            </div>
-                                          )}
-                                          {(service.type === 'hosting' || service.type === 'both') && (
-                                            <div className="space-y-4">
-                                              <p className="text-lg font-black text-slate-900 tracking-tighter">{service.hostingPlan} <span className="text-[10px] text-slate-400 font-bold">({service.hostingProvider})</span></p>
-                                              <p className="text-[10px] font-mono bg-slate-50 p-2 rounded-lg text-slate-500">IP: {service.hostingServerIp || '0.0.0.0'}</p>
-                                              <div className="flex justify-between gap-4">
-                                                <div className="flex-1"><p className="text-[9px] font-black text-slate-400 uppercase">INTERNAL COST</p><p className="text-sm font-black text-slate-800">{formatCurrency(service.hostingCost || 0, service.hostingCostCurrency)}</p></div>
-                                                <div className="flex-1 text-right"><p className="text-[9px] font-black text-indigo-600 uppercase">RENEWAL CHARGE</p><p className="text-sm font-black text-indigo-700">{formatCurrency(service.hostingCharge || 0, service.hostingChargeCurrency)}</p></div>
-                                              </div>
-                                            </div>
-                                          )}
-                                      </div>
-                                    </div>
-                                    <div className="space-y-6">
-                                      <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2"><PlusCircle size={14} className="text-indigo-500"/> ADDITIONAL ASSETS</h4>
-                                      <div className="space-y-4">
-                                        {service.additionalServices?.length ? service.additionalServices.map((as, i) => (
-                                          <div key={i} className="bg-white p-6 rounded-3xl border-2 border-slate-100 space-y-3 shadow-sm">
-                                            <div className="flex justify-between items-start"><p className="font-black text-slate-900 text-md tracking-tight">{as.name}</p><p className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg">{formatCurrency(as.charge, as.chargeCurrency)}</p></div>
-                                          </div>
-                                        )) : <p className="text-xs text-slate-400 italic font-medium">No additional assets linked.</p>}
-                                      </div>
-                                    </div>
-                                    <div className="space-y-6">
-                                      <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2"><Info size={14} className="text-indigo-500"/> SYSTEM JOURNAL</h4>
-                                      <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl min-h-[200px] relative overflow-hidden">
-                                          <p className="relative z-10 text-sm font-medium leading-relaxed opacity-90 italic whitespace-pre-wrap">{service.notes || 'No journal entries for this asset.'}</p>
-                                          <div className="absolute bottom-0 right-0 p-8 opacity-5"><Database size={100}/></div>
-                                      </div>
-                                    </div>
-                                </div>
-                              </td></tr>
+                            <tr className="bg-slate-50/50">
+                              <td colSpan={5} className="px-6 py-8 md:px-10 md:py-10 border-l-4 border-indigo-500">
+                                {renderExpandedContent(service)}
+                              </td>
+                            </tr>
                           )}
                         </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Mobile View: Cards */}
+              <div className="lg:hidden divide-y divide-slate-100">
+                {filteredServices.length === 0 ? (
+                  <div className="p-10 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">No assets found</div>
+                ) : (
+                  filteredServices.map(service => {
+                    const isExpanded = !!expandedRows[service.id];
+                    const allExpiries = [service.domainExpiry, service.hostingExpiry, ...(service.additionalServices?.map(as => as.expiry) || [])].filter(Boolean) as string[];
+                    const nextExpiry = allExpiries.length > 0 ? allExpiries.reduce((a, b) => new Date(a) < new Date(b) ? a : b) : null;
+                    const daysLeft = nextExpiry ? getDaysRemaining(nextExpiry) : null;
+
+                    return (
+                      <div key={service.id} className={`flex flex-col transition-all ${isExpanded ? 'bg-indigo-50/30' : ''}`}>
+                        <div className="p-5 flex items-start gap-4 cursor-pointer" onClick={() => toggleRow(service.id)}>
+                          <div className="mt-1 text-slate-400 shrink-0">
+                            {isExpanded ? <ChevronUp size={20} className="stroke-[3]" /> : <ChevronDown size={20} className="stroke-[3]" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start mb-1">
+                               <p className="font-black text-slate-900 tracking-tighter text-base leading-tight truncate pr-2">
+                                 {service.domainName || service.hostingPlan || 'Custom Service'}
+                               </p>
+                               <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-500 shrink-0">
+                                 {service.type}
+                               </span>
+                            </div>
+                            <p className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1 mb-2">
+                              <User size={10} /> {service.clientId}
+                            </p>
+                            {nextExpiry && (
+                              <div className="flex items-center gap-2">
+                                <Calendar size={12} className="text-slate-400" />
+                                <p className={`text-[10px] font-black uppercase ${daysLeft !== null && daysLeft < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                  Exp: {nextExpiry} {daysLeft !== null && `(${daysLeft < 0 ? 'EXPIRED' : `${daysLeft}D`})`}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                             <button onClick={() => openProvisionModal(service)} className="p-2 text-slate-500 hover:text-indigo-600 bg-slate-50 rounded-lg border border-slate-100 transition-all"><FileText size={16}/></button>
+                             <button onClick={() => deleteItem(service.id)} className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 rounded-lg border border-slate-100 transition-all"><Trash2 size={16}/></button>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="px-5 pb-8 pt-2 border-t border-slate-100">
+                             {renderExpandedContent(service)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
@@ -591,22 +692,22 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-2 bg-slate-200 rounded-3xl flex gap-1">
+            <div className="p-2 bg-slate-200 rounded-2xl md:rounded-3xl flex gap-1">
                 {(['domain', 'hosting', 'both'] as ServiceType[]).map(t => (
-                  <label key={t} className={`flex-1 px-4 py-3 rounded-2xl cursor-pointer transition-all flex items-center justify-center font-black text-[10px] uppercase tracking-widest ${formType === t ? 'bg-white text-indigo-700 shadow-md border border-slate-100' : 'text-slate-600 hover:text-slate-800'}`}>
+                  <label key={t} className={`flex-1 px-3 py-3 rounded-xl md:rounded-2xl cursor-pointer transition-all flex items-center justify-center font-black text-[9px] md:text-[10px] uppercase tracking-widest ${formType === t ? 'bg-white text-indigo-700 shadow-md border border-slate-100' : 'text-slate-600 hover:text-slate-800'}`}>
                     <input type="radio" name="type" value={t} checked={formType === t} onChange={() => setFormType(t)} className="hidden" /> <span>{t}</span>
                   </label>
                 ))}
             </div>
 
             {(formType === 'domain' || formType === 'both') && (
-              <div className="p-8 rounded-[2.5rem] border-2 border-slate-100 border-l-8 border-l-indigo-600 bg-white space-y-6 shadow-sm">
+              <div className="p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-slate-100 border-l-8 border-l-indigo-600 bg-white space-y-6 shadow-sm">
                 <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><Globe size={18} className="text-indigo-600"/> Domain Configuration</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="md:col-span-2"><input name="domainName" defaultValue={editItem?.domainName} className="w-full px-5 py-3.5 border-2 border-slate-200 bg-slate-50 rounded-2xl focus:border-indigo-600 outline-none font-black text-slate-900 placeholder:text-slate-400" placeholder="domain.com" /></div>
                   <input name="registrar" defaultValue={editItem?.registrar} className="w-full px-5 py-3 border-2 border-slate-200 bg-slate-50 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400" placeholder="Registrar" />
                   <input name="domainExpiry" type="date" defaultValue={editItem?.domainExpiry} style={{ colorScheme: 'light' }} className="w-full px-5 py-3 border-2 border-slate-200 bg-slate-50 rounded-2xl text-xs font-bold text-slate-900" />
-                  <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="flex border-2 border-slate-100 rounded-2xl overflow-hidden"><select name="domainCostCurrency" defaultValue={editItem?.domainCostCurrency || 'NPR'} className="bg-slate-100 text-slate-900 px-2 outline-none font-black text-[9px] border-r border-slate-100"><option value="NPR">NPR</option><option value="INR">INR</option></select><input name="domainCost" type="number" step="0.01" defaultValue={editItem?.domainCost} className="w-full px-4 py-3 bg-slate-50 outline-none text-sm font-black text-slate-900 placeholder:text-slate-400" placeholder="Buying Cost" /></div>
                      <div className="flex border-2 border-slate-100 rounded-2xl overflow-hidden"><select name="domainChargeCurrency" defaultValue={editItem?.domainChargeCurrency || 'INR'} className="bg-slate-100 text-slate-900 px-2 outline-none font-black text-[9px] border-r border-slate-100"><option value="NPR">NPR</option><option value="INR">INR</option></select><input name="domainCharge" type="number" step="0.01" defaultValue={editItem?.domainCharge} className="w-full px-4 py-3 bg-slate-50 outline-none text-sm font-black text-slate-900 placeholder:text-slate-400" placeholder="Selling Price" /></div>
                   </div>
@@ -615,13 +716,13 @@ const App: React.FC = () => {
             )}
 
             {(formType === 'hosting' || formType === 'both') && (
-              <div className="p-8 rounded-[2.5rem] border-2 border-slate-100 border-l-8 border-l-indigo-600 bg-white space-y-6 shadow-sm">
+              <div className="p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-slate-100 border-l-8 border-l-indigo-600 bg-white space-y-6 shadow-sm">
                 <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><Server size={18} className="text-indigo-600"/> Hosting Parameters</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="md:col-span-2"><input name="hostingPlan" defaultValue={editItem?.hostingPlan} className="w-full px-5 py-3.5 border-2 border-slate-200 bg-slate-50 rounded-2xl focus:border-indigo-600 outline-none font-black text-slate-900 placeholder:text-slate-400" placeholder="Plan Name" /></div>
                   <input name="hostingProvider" defaultValue={editItem?.hostingProvider} className="w-full px-5 py-3 border-2 border-slate-200 bg-slate-50 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400" placeholder="Host" />
                   <input name="hostingExpiry" type="date" defaultValue={editItem?.hostingExpiry} style={{ colorScheme: 'light' }} className="w-full px-5 py-3 border-2 border-slate-200 bg-slate-50 rounded-2xl text-xs font-bold text-slate-900" />
-                  <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="flex border-2 border-slate-100 rounded-2xl overflow-hidden"><select name="hostingCostCurrency" defaultValue={editItem?.hostingCostCurrency || 'NPR'} className="bg-slate-100 text-slate-900 px-2 outline-none font-black text-[9px] border-r border-slate-100"><option value="NPR">NPR</option><option value="INR">INR</option></select><input name="hostingCost" type="number" step="0.01" defaultValue={editItem?.hostingCost} className="w-full px-4 py-3 bg-slate-50 outline-none text-sm font-black text-slate-900 placeholder:text-slate-400" placeholder="Cost" /></div>
                      <div className="flex border-2 border-slate-100 rounded-2xl overflow-hidden"><select name="hostingChargeCurrency" defaultValue={editItem?.hostingChargeCurrency || 'INR'} className="bg-slate-100 text-slate-900 px-2 outline-none font-black text-[9px] border-r border-slate-100"><option value="NPR">NPR</option><option value="INR">INR</option></select><input name="hostingCharge" type="number" step="0.01" defaultValue={editItem?.hostingCharge} className="w-full px-4 py-3 bg-slate-50 outline-none text-sm font-black text-slate-900 placeholder:text-slate-400" placeholder="Charge" /></div>
                   </div>
@@ -630,18 +731,18 @@ const App: React.FC = () => {
             )}
 
             {/* ADDITIONAL SERVICES SECTION */}
-            <div className="p-8 rounded-[2.5rem] border-2 border-slate-100 bg-slate-50 space-y-6">
-              <div className="flex justify-between items-center">
+            <div className="p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-slate-100 bg-slate-50 space-y-6">
+              <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                 <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><PlusSquare size={18} className="text-indigo-600"/> Additional Services</p>
-                <button type="button" onClick={addAddonField} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 text-[10px] font-black uppercase px-4 py-2"><Plus size={14}/> Add New</button>
+                <button type="button" onClick={addAddonField} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase px-4 py-2"><Plus size={14}/> Add New</button>
               </div>
               
               <div className="space-y-4">
                 {tempAddons.map((addon) => (
-                  <div key={addon.id} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-sm relative">
+                  <div key={addon.id} className="bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl border border-slate-200 space-y-4 shadow-sm relative">
                     <button type="button" onClick={() => removeAddonField(addon.id)} className="absolute top-4 right-4 text-rose-500 hover:text-rose-700 transition-colors"><MinusCircle size={20}/></button>
                     <input value={addon.name} onChange={(e) => updateAddonField(addon.id, 'name', e.target.value)} className="w-full px-4 py-2 border-b-2 border-slate-100 bg-white focus:border-indigo-600 outline-none font-bold text-sm text-slate-900 placeholder:text-slate-400" placeholder="Service Name (SSL, Email, etc)" />
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="flex border-2 border-slate-100 rounded-xl overflow-hidden"><select value={addon.chargeCurrency} onChange={(e) => updateAddonField(addon.id, 'chargeCurrency', e.target.value)} className="bg-slate-100 text-slate-900 px-2 outline-none font-black text-[9px] border-r border-slate-100"><option value="NPR">NPR</option><option value="INR">INR</option></select><input type="number" value={addon.charge} onChange={(e) => updateAddonField(addon.id, 'charge', parseFloat(e.target.value))} className="w-full px-4 py-2 bg-slate-50 outline-none text-xs font-black text-slate-900 placeholder:text-slate-400" placeholder="Charge" /></div>
                       <input type="date" value={addon.expiry} onChange={(e) => updateAddonField(addon.id, 'expiry', e.target.value)} style={{ colorScheme: 'light' }} className="w-full px-4 py-2 border-2 border-slate-100 bg-slate-50 rounded-xl text-[10px] font-bold text-slate-900" />
                     </div>
@@ -653,12 +754,12 @@ const App: React.FC = () => {
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-slate-500 px-2 tracking-widest">Administrative Journal</label>
-              <textarea name="notes" defaultValue={editItem?.notes} className="w-full px-8 py-6 border-2 border-slate-100 rounded-[2.5rem] bg-slate-50 text-slate-900 outline-none font-medium text-sm focus:border-indigo-600 shadow-sm placeholder:text-slate-400" rows={4} placeholder="Internal project details, passwords, or maintenance logs..." />
+              <textarea name="notes" defaultValue={editItem?.notes} className="w-full px-6 md:px-8 py-6 border-2 border-slate-100 rounded-[1.5rem] md:rounded-[2.5rem] bg-slate-50 text-slate-900 outline-none font-medium text-sm focus:border-indigo-600 shadow-sm placeholder:text-slate-400" rows={4} placeholder="Internal project details, passwords, or maintenance logs..." />
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-600 py-6 rounded-[2.5rem] font-black text-xs hover:bg-slate-200 transition-all uppercase tracking-widest">DISCARD</button>
-              <button type="submit" className="flex-[2] bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black text-sm shadow-2xl hover:bg-indigo-700 transition-all uppercase tracking-widest">CONFIRM PROVISION</button>
+            <div className="flex flex-col md:flex-row gap-3 pt-4">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="bg-slate-100 text-slate-600 py-5 md:py-6 rounded-[1.5rem] md:rounded-[2.5rem] font-black text-xs hover:bg-slate-200 transition-all uppercase tracking-widest order-2 md:order-1">DISCARD</button>
+              <button type="submit" className="flex-1 bg-indigo-600 text-white py-5 md:py-6 rounded-[1.5rem] md:rounded-[2.5rem] font-black text-sm shadow-2xl hover:bg-indigo-700 transition-all uppercase tracking-widest order-1 md:order-2">CONFIRM PROVISION</button>
             </div>
          </form>
       </Modal>
