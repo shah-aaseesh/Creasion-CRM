@@ -47,8 +47,8 @@ import {
 import Modal from './components/Modal.tsx';
 
 // Supabase Initialization
-const supabaseUrl = 'https://yvqiyegopttiqlclxfxy.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2cWl5ZWdvcHR0aXFsY2x4Znh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYzMzUzOTksImV4cCI6MjA4MTkxMTM5OX0.FkXfHMugNRcPAEh3U3jCicjHeDaLAOYqQfqiCPbWLRc';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://obccxtvxyfihaugrrncd.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9iY2N4dHZ4eWZpaGF1Z3JybmNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MjA2ODIsImV4cCI6MjA4MTk5NjY4Mn0.fli6WJjGUvHsbXJccfc4cmhoHIMV8Dor9vbOjJJquvw';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const STORAGE_KEY = 'creasion_crm_v4_data';
