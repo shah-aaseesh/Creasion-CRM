@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  LayoutDashboard, 
-  Globe, 
-  Server, 
-  LogOut, 
-  Search, 
-  Plus, 
+import {
+  LayoutDashboard,
+  Globe,
+  Server,
+  LogOut,
+  Search,
+  Plus,
   AlertTriangle,
   FileText,
   Package,
@@ -33,7 +33,8 @@ import {
   Copy,
   User,
   PlusSquare,
-  MinusCircle
+  MinusCircle,
+  HardDrive
 } from 'lucide-react';
 import { createClient, User as SupabaseUser } from '@supabase/supabase-js';
 import { AppData, Service, ServiceType, Currency, ExpiryStatus, AdditionalService } from './types.ts';
@@ -76,8 +77,21 @@ const DEFAULT_DATA: AppData = {
   }
 };
 
+interface HostingPlan {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+interface HostedWebsite {
+  id: string;
+  hosting_plan_id: string;
+  domain_name: string;
+  created_at: string;
+}
+
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'services'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'services' | 'hosting-sites'>('dashboard');
   const [data, setData] = useState<AppData>(DEFAULT_DATA);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authEmail] = useState(APPROVED_USER);
@@ -85,14 +99,14 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [dbSetupRequired, setDbSetupRequired] = useState(false);
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<Service | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connected' | 'offline' | 'error'>('connected');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
-  
+
   // Sidebar & Modal State
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -101,6 +115,15 @@ const App: React.FC = () => {
   const [tempAddons, setTempAddons] = useState<AdditionalService[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Hosting Sites Feature State
+  const [hostingPlans, setHostingPlans] = useState<HostingPlan[]>([]);
+  const [hostedWebsites, setHostedWebsites] = useState<HostedWebsite[]>([]);
+  const [showAddPlanModal, setShowAddPlanModal] = useState(false);
+  const [showAddWebsiteModal, setShowAddWebsiteModal] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [newPlanName, setNewPlanName] = useState('');
+  const [newWebsiteDomain, setNewWebsiteDomain] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -338,6 +361,90 @@ const App: React.FC = () => {
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
+  // Hosting Sites Feature Functions
+  const loadHostingPlans = async () => {
+    if (!user) return;
+    try {
+      const { data: plans, error } = await supabase
+        .from('hosting_plans')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setHostingPlans(plans || []);
+    } catch (e) { console.error('Failed to load hosting plans:', e); }
+  };
+
+  const loadHostedWebsites = async () => {
+    if (!user) return;
+    try {
+      const { data: websites, error } = await supabase
+        .from('hosted_websites')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setHostedWebsites(websites || []);
+    } catch (e) { console.error('Failed to load websites:', e); }
+  };
+
+  const createHostingPlan = async () => {
+    if (!user || !newPlanName.trim()) return;
+    try {
+      const { error } = await supabase
+        .from('hosting_plans')
+        .insert({ user_id: user.id, name: newPlanName.trim() });
+      if (error) throw error;
+      setNewPlanName('');
+      setShowAddPlanModal(false);
+      loadHostingPlans();
+    } catch (e) { console.error('Failed to create plan:', e); alert('Failed to create hosting plan'); }
+  };
+
+  const deleteHostingPlan = async (planId: string) => {
+    if (!window.confirm('Delete this hosting plan and all its websites?')) return;
+    try {
+      const { error } = await supabase
+        .from('hosting_plans')
+        .delete()
+        .eq('id', planId);
+      if (error) throw error;
+      loadHostingPlans();
+      loadHostedWebsites();
+    } catch (e) { console.error('Failed to delete plan:', e); alert('Failed to delete hosting plan'); }
+  };
+
+  const createHostedWebsite = async () => {
+    if (!selectedPlanId || !newWebsiteDomain.trim()) return;
+    try {
+      const { error } = await supabase
+        .from('hosted_websites')
+        .insert({ hosting_plan_id: selectedPlanId, domain_name: newWebsiteDomain.trim() });
+      if (error) throw error;
+      setNewWebsiteDomain('');
+      setShowAddWebsiteModal(false);
+      setSelectedPlanId(null);
+      loadHostedWebsites();
+    } catch (e) { console.error('Failed to add website:', e); alert('Failed to add website'); }
+  };
+
+  const deleteHostedWebsite = async (websiteId: string) => {
+    if (!window.confirm('Delete this website?')) return;
+    try {
+      const { error } = await supabase
+        .from('hosted_websites')
+        .delete()
+        .eq('id', websiteId);
+      if (error) throw error;
+      loadHostedWebsites();
+    } catch (e) { console.error('Failed to delete website:', e); alert('Failed to delete website'); }
+  };
+
+  useEffect(() => {
+    if (user && activeTab === 'hosting-sites') {
+      loadHostingPlans();
+      loadHostedWebsites();
+    }
+  }, [user, activeTab]);
+
   if (!user) {
     return (
       <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-4">
@@ -413,6 +520,7 @@ const App: React.FC = () => {
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'services', icon: Briefcase, label: 'Inventory' },
+            { id: 'hosting-sites', icon: HardDrive, label: 'Hosting Sites' },
           ].map((item) => (
             <button key={item.id} onClick={() => { setActiveTab(item.id as any); setIsMobileMenuOpen(false); }} className={`w-full flex items-center rounded-2xl transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20' : 'hover:bg-white/5 hover:text-white'} ${isSidebarOpen ? 'px-4 py-4 space-x-3' : 'px-0 py-4 justify-center'}`}>
               <item.icon size={20} /> <span className={`font-bold ${!isSidebarOpen ? 'lg:hidden' : ''}`}>{item.label}</span>
@@ -441,19 +549,104 @@ const App: React.FC = () => {
         <header className="bg-white h-20 border-b flex items-center justify-between px-4 md:px-10 shrink-0 z-10 shadow-sm">
           <div className="flex items-center space-x-3 md:space-x-8">
             <button onClick={toggleMobileMenu} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl"><Menu size={24} /></button>
-            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{activeTab === 'services' ? 'Inventory' : 'Dashboard'}</h2>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
+              {activeTab === 'services' ? 'Inventory' : activeTab === 'hosting-sites' ? 'Hosting Sites' : 'Dashboard'}
+            </h2>
             <div className="hidden lg:relative lg:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input type="text" placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-6 py-2.5 border-2 border-slate-100 text-slate-900 rounded-2xl text-sm focus:border-indigo-500 bg-slate-50 w-80 font-medium outline-none transition-all" />
             </div>
           </div>
-          <button onClick={() => openProvisionModal()} className="bg-indigo-600 text-white p-2.5 md:px-8 md:py-3.5 rounded-xl md:rounded-2xl flex items-center space-x-3 hover:bg-indigo-700 shadow-xl shadow-indigo-100 font-black uppercase text-[10px] md:text-xs tracking-widest transition-all">
-            <Plus size={20} className="stroke-[3]" /> <span className="hidden md:inline">Provision New</span>
-          </button>
+          {activeTab === 'hosting-sites' ? (
+            <button onClick={() => setShowAddPlanModal(true)} className="bg-indigo-600 text-white p-2.5 md:px-8 md:py-3.5 rounded-xl md:rounded-2xl flex items-center space-x-3 hover:bg-indigo-700 shadow-xl shadow-indigo-100 font-black uppercase text-[10px] md:text-xs tracking-widest transition-all">
+              <Plus size={20} className="stroke-[3]" /> <span className="hidden md:inline">Add Hosting Plan</span>
+            </button>
+          ) : (
+            <button onClick={() => openProvisionModal()} className="bg-indigo-600 text-white p-2.5 md:px-8 md:py-3.5 rounded-xl md:rounded-2xl flex items-center space-x-3 hover:bg-indigo-700 shadow-xl shadow-indigo-100 font-black uppercase text-[10px] md:text-xs tracking-widest transition-all">
+              <Plus size={20} className="stroke-[3]" /> <span className="hidden md:inline">Provision New</span>
+            </button>
+          )}
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-10">
-          {activeTab === 'dashboard' ? (
+          {activeTab === 'hosting-sites' ? (
+            <div className="space-y-6">
+              {hostingPlans.map((plan) => {
+                const planWebsites = hostedWebsites.filter(w => w.hosting_plan_id === plan.id);
+                return (
+                  <div key={plan.id} className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm overflow-hidden">
+                    <div className="p-6 md:p-8 border-b-2 border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="bg-indigo-600 p-3 rounded-2xl text-white">
+                          <Server size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight">{plan.name}</h3>
+                          <p className="text-[10px] font-black text-slate-500 uppercase mt-1">{planWebsites.length} Websites Hosted</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setSelectedPlanId(plan.id); setShowAddWebsiteModal(true); }}
+                          className="p-2 md:px-6 md:py-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl transition-all flex items-center gap-2 font-black text-[10px] md:text-xs uppercase tracking-widest"
+                        >
+                          <Plus size={16} /> <span className="hidden md:inline">Add Website</span>
+                        </button>
+                        <button
+                          onClick={() => deleteHostingPlan(plan.id)}
+                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-6 md:p-8">
+                      {planWebsites.length === 0 ? (
+                        <div className="text-center py-10 text-slate-400 italic">
+                          <Globe size={48} className="mx-auto mb-4 opacity-20" />
+                          <p className="font-medium">No websites added yet</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {planWebsites.map((website) => (
+                            <div key={website.id} className="p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 flex items-center justify-between hover:border-indigo-200 transition-all group">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className="bg-white p-2 rounded-xl border border-slate-200 shrink-0">
+                                  <Globe size={16} className="text-indigo-600" />
+                                </div>
+                                <p className="font-bold text-slate-900 text-sm truncate">{website.domain_name}</p>
+                              </div>
+                              <button
+                                onClick={() => deleteHostedWebsite(website.id)}
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {hostingPlans.length === 0 && (
+                <div className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm p-20 text-center">
+                  <div className="bg-slate-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <HardDrive size={48} className="text-slate-300" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 mb-2">No Hosting Plans Yet</h3>
+                  <p className="text-slate-500 font-medium mb-6">Create your first hosting plan to start managing websites</p>
+                  <button
+                    onClick={() => setShowAddPlanModal(true)}
+                    className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all shadow-xl"
+                  >
+                    Create Hosting Plan
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'dashboard' ? (
             <div className="space-y-6 md:space-y-10">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
                  <div className="bg-white p-6 md:p-10 rounded-[2rem] border-2 border-slate-100 shadow-sm flex items-center justify-between">
@@ -579,6 +772,72 @@ const App: React.FC = () => {
           )}
         </div>
       </main>
+
+      <Modal isOpen={showAddPlanModal} onClose={() => { setShowAddPlanModal(false); setNewPlanName(''); }} title="Create Hosting Plan">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-slate-500 px-2 tracking-widest">Hosting Plan Name</label>
+            <input
+              type="text"
+              value={newPlanName}
+              onChange={(e) => setNewPlanName(e.target.value)}
+              placeholder="e.g., Shared Server A, VPS Production"
+              className="w-full px-6 py-4 border-2 border-slate-100 bg-slate-50 text-slate-900 rounded-2xl font-bold outline-none focus:border-indigo-600 transition-all placeholder:text-slate-400"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setShowAddPlanModal(false); setNewPlanName(''); }}
+              className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-black text-xs hover:bg-slate-200 transition-all uppercase tracking-widest"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={createHostingPlan}
+              disabled={!newPlanName.trim()}
+              className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black text-sm shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Create Plan
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showAddWebsiteModal} onClose={() => { setShowAddWebsiteModal(false); setNewWebsiteDomain(''); setSelectedPlanId(null); }} title="Add Website">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-slate-500 px-2 tracking-widest">Domain / Website Name</label>
+            <input
+              type="text"
+              value={newWebsiteDomain}
+              onChange={(e) => setNewWebsiteDomain(e.target.value)}
+              placeholder="e.g., example.com, mysite.org"
+              className="w-full px-6 py-4 border-2 border-slate-100 bg-slate-50 text-slate-900 rounded-2xl font-bold outline-none focus:border-indigo-600 transition-all placeholder:text-slate-400"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setShowAddWebsiteModal(false); setNewWebsiteDomain(''); setSelectedPlanId(null); }}
+              className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-black text-xs hover:bg-slate-200 transition-all uppercase tracking-widest"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={createHostedWebsite}
+              disabled={!newWebsiteDomain.trim()}
+              className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black text-sm shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add Website
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editItem ? 'Update Asset Provision' : 'Provision New Infrastructure'}>
          <form onSubmit={saveService} className="space-y-8 pb-10">
