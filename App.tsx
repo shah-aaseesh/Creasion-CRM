@@ -30,15 +30,16 @@ import {
   ChevronRight,
   Download,
   Upload,
-  Copy,
   User,
   PlusSquare,
   MinusCircle,
   ExternalLink,
-  Calendar
+  Calendar,
+  Layers,
+  Copy
 } from 'lucide-react';
 import { createClient, User as SupabaseUser } from '@supabase/supabase-js';
-import { AppData, Service, ServiceType, Currency, ExpiryStatus, AdditionalService } from './types.ts';
+import { AppData, Service, ServiceType, Currency, ExpiryStatus, AdditionalService, HostingPlan, HostingSite } from './types.ts';
 import { 
   formatCurrency, 
   getExpiryStatus, 
@@ -55,6 +56,20 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const STORAGE_KEY = 'creasion_crm_v4_data';
 const APPROVED_USER = 'shahaaseesh@gmail.com'.toLowerCase();
 
+// Robust error extractor to fix [object Object] issues
+const getErrorMessage = (err: any): string => {
+  if (!err) return "Unknown system error";
+  if (typeof err === 'string') return err;
+  if (err.message) return err.message;
+  if (err.error_description) return err.error_description;
+  try {
+    const stringified = JSON.stringify(err);
+    return stringified === '{}' ? String(err) : stringified;
+  } catch {
+    return String(err);
+  }
+};
+
 const SQL_SETUP_SCRIPT = `-- 🔥 CORE TABLE INITIALIZATION
 CREATE TABLE IF NOT EXISTS crm_state (
   user_id uuid REFERENCES auth.users NOT NULL PRIMARY KEY,
@@ -62,10 +77,36 @@ CREATE TABLE IF NOT EXISTS crm_state (
   updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 ALTER TABLE crm_state ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can only access their own state" ON crm_state;
-CREATE POLICY "Users can only access their own state"
-  ON crm_state FOR ALL
-  USING ( auth.uid() = user_id );`.trim();
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can only access their own state" ON crm_state;
+    CREATE POLICY "Users can only access their own state" ON crm_state FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- 🌍 HOSTING SITES MODULE
+CREATE TABLE IF NOT EXISTS hosting_plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  name text NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE hosting_plans ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can only access their own hosting plans" ON hosting_plans;
+    CREATE POLICY "Users can only access their own hosting plans" ON hosting_plans FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN others THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS hosting_sites (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users NOT NULL,
+  plan_id uuid REFERENCES hosting_plans(id) ON DELETE CASCADE NOT NULL,
+  domain_name text NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE hosting_sites ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Users can only access their own hosting sites" ON hosting_sites;
+    CREATE POLICY "Users can only access their own hosting sites" ON hosting_sites FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN others THEN NULL; END $$;`.trim();
 
 const DEFAULT_DATA: AppData = {
   clients: [],
@@ -79,7 +120,7 @@ const DEFAULT_DATA: AppData = {
 };
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'services'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'services' | 'hosting-sites'>('dashboard');
   const [data, setData] = useState<AppData>(DEFAULT_DATA);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authEmail] = useState(APPROVED_USER);
@@ -87,6 +128,12 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [dbSetupRequired, setDbSetupRequired] = useState(false);
+  
+  // Independent Feature State
+  const [hostingPlans, setHostingPlans] = useState<HostingPlan[]>([]);
+  const [hostingSites, setHostingSites] = useState<HostingSite[]>([]);
+  const [isHostingLoading, setIsHostingLoading] = useState(false);
+  const [newPlanName, setNewPlanName] = useState('');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -119,11 +166,15 @@ const App: React.FC = () => {
         
         if (session?.user?.email?.toLowerCase() === APPROVED_USER) {
           setUser(session.user);
-          loadFromCloud(session.user.id);
+          await loadFromCloud(session.user.id);
+          await loadHostingData(session.user.id);
         } else if (session?.user) {
           await handleLogout();
         }
-      } catch (err: any) { setDbStatus('error'); }
+      } catch (err: any) { 
+        console.error("Auth Init Error", getErrorMessage(err));
+        setDbStatus('error'); 
+      }
     };
 
     initAuth();
@@ -133,6 +184,7 @@ const App: React.FC = () => {
       if (currentUser?.email?.toLowerCase() === APPROVED_USER) {
         setUser(currentUser);
         loadFromCloud(currentUser.id);
+        loadHostingData(currentUser.id);
       } else {
         setUser(null);
       }
@@ -140,6 +192,102 @@ const App: React.FC = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const loadHostingData = async (userId: string) => {
+    setIsHostingLoading(true);
+    try {
+      const [plansRes, sitesRes] = await Promise.all([
+        supabase.from('hosting_plans').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabase.from('hosting_sites').select('*').eq('user_id', userId).order('created_at', { ascending: true })
+      ]);
+      
+      if (plansRes.error) throw plansRes.error;
+      if (sitesRes.error) throw sitesRes.error;
+
+      setHostingPlans(plansRes.data || []);
+      setHostingSites(sitesRes.data || []);
+    } catch (e: any) {
+      const errorMsg = getErrorMessage(e);
+      console.error("Hosting Fetch Error", errorMsg);
+      if (e.code === '42P01' || errorMsg.includes('42P01') || errorMsg.toLowerCase().includes('relation') || errorMsg.toLowerCase().includes('not found')) {
+        setDbSetupRequired(true);
+      }
+    } finally {
+      setIsHostingLoading(false);
+    }
+  };
+
+  const addHostingPlan = async () => {
+    if (!newPlanName.trim() || !user) return;
+    try {
+      const { data: newPlan, error } = await supabase
+        .from('hosting_plans')
+        .insert({ name: newPlanName, user_id: user.id })
+        .select()
+        .single();
+      if (error) throw error;
+      setHostingPlans([newPlan, ...hostingPlans]);
+      setNewPlanName('');
+    } catch (e) { alert("Failed to add plan: " + getErrorMessage(e)); }
+  };
+
+  const deleteHostingPlan = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Delete this plan and ALL associated websites? This cannot be undone.")) return;
+    
+    try {
+      // Deleting plan will automatically delete sites due to CASCADE in SQL if set up correctly, 
+      // but we filter local state regardless for immediate feedback.
+      const { error } = await supabase
+        .from('hosting_plans')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id); // Security context
+        
+      if (error) throw error;
+      
+      setHostingPlans(prev => prev.filter(p => p.id !== id));
+      setHostingSites(prev => prev.filter(s => s.plan_id !== id));
+    } catch (e) { 
+      const msg = getErrorMessage(e);
+      console.error("Delete Plan Error", msg);
+      alert("Delete failed: " + msg); 
+    }
+  };
+
+  const addHostingSite = async (planId: string, domainName: string) => {
+    if (!domainName.trim() || !user) return;
+    try {
+      const { data: newSite, error } = await supabase
+        .from('hosting_sites')
+        .insert({ plan_id: planId, domain_name: domainName, user_id: user.id })
+        .select()
+        .single();
+      if (error) throw error;
+      setHostingSites([...hostingSites, newSite]);
+    } catch (e) { alert("Failed to add site: " + getErrorMessage(e)); }
+  };
+
+  const deleteHostingSite = async (siteId: string) => {
+    if (!user) return;
+    if (!window.confirm("Remove this website from the plan?")) return;
+
+    try {
+      const { error } = await supabase
+        .from('hosting_sites')
+        .delete()
+        .eq('id', siteId)
+        .eq('user_id', user.id); // Security context
+
+      if (error) throw error;
+      
+      setHostingSites(prev => prev.filter(s => s.id !== siteId));
+    } catch (e) { 
+      const msg = getErrorMessage(e);
+      console.error("Delete Site Error", msg);
+      alert("Delete failed: " + msg); 
+    }
+  };
 
   const syncToCloud = async (newData: AppData, userId?: string) => {
     const targetId = userId || user?.id;
@@ -160,6 +308,8 @@ const App: React.FC = () => {
       setLastSyncTime(new Date().toISOString());
       setDbSetupRequired(false);
     } catch (e: any) {
+      const errorMsg = getErrorMessage(e);
+      console.error("Sync Error", errorMsg);
       setDbStatus('error');
       if (e.code === '42703' || e.code === '42P01') setDbSetupRequired(true);
     } finally {
@@ -190,7 +340,14 @@ const App: React.FC = () => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(record.content));
         setDbStatus('connected');
       }
-    } catch (e: any) { setDbStatus('error'); }
+    } catch (e: any) { 
+      const errorMsg = getErrorMessage(e);
+      console.error("Cloud Load Error", errorMsg);
+      setDbStatus('error'); 
+      if (e.code === '42P01' || errorMsg.toLowerCase().includes('relation')) {
+        setDbSetupRequired(true);
+      }
+    }
     finally { setIsSyncing(false); }
   };
 
@@ -238,12 +395,13 @@ const App: React.FC = () => {
       if (error) throw error;
       if (authData.user && authData.user.email?.toLowerCase() === APPROVED_USER) {
         setUser(authData.user);
-        loadFromCloud(authData.user.id);
+        await loadFromCloud(authData.user.id);
+        await loadHostingData(authData.user.id);
       } else {
-        throw new Error("Denied");
+        throw new Error("Access Denied: Restricted Operator Only");
       }
     } catch (error: any) {
-      setAuthError(error.message || "Auth failed");
+      setAuthError(getErrorMessage(error));
     } finally { setAuthLoading(false); }
   };
 
@@ -323,7 +481,7 @@ const App: React.FC = () => {
   };
 
   const deleteItem = (id: string) => {
-    if (window.confirm('Delete permanently?')) {
+    if (window.confirm('Delete this service permanently?')) {
       updateData({ ...data, services: data.services.filter(s => s.id !== id) });
     }
   };
@@ -386,15 +544,15 @@ const App: React.FC = () => {
   if (dbSetupRequired) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-2xl border-2 border-rose-100">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-2xl border-2 border-rose-100 overflow-hidden relative">
           <div className="flex items-center gap-4 mb-6">
              <div className="bg-rose-100 p-4 rounded-2xl text-rose-600"><Database size={32} /></div>
              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Core System Setup</h2>
           </div>
-          <p className="text-slate-600 font-bold mb-8 leading-relaxed">Run this SQL in Supabase to initialize your schema:</p>
+          <p className="text-slate-600 font-bold mb-8 leading-relaxed">Run this SQL in Supabase to initialize your schema. This is a one-time setup:</p>
           <div className="bg-slate-900 rounded-2xl p-6 mb-8 shadow-inner relative">
             <button onClick={() => { navigator.clipboard.writeText(SQL_SETUP_SCRIPT); alert("SQL Copied!"); }} className="absolute top-4 right-4 p-2 bg-white/10 text-white/50 hover:text-white rounded-xl"><Copy size={16} /></button>
-            <pre className="text-emerald-400 font-mono text-xs overflow-x-auto max-h-60">{SQL_SETUP_SCRIPT}</pre>
+            <pre className="text-emerald-400 font-mono text-[10px] overflow-x-auto max-h-60 whitespace-pre">{SQL_SETUP_SCRIPT}</pre>
           </div>
           <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-xl hover:bg-black transition-all flex items-center justify-center gap-3"><RefreshCw size={24} /> INITIALIZE KERNEL</button>
         </div>
@@ -491,6 +649,7 @@ const App: React.FC = () => {
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'services', icon: Briefcase, label: 'Inventory' },
+            { id: 'hosting-sites', icon: Layers, label: 'Hosting Sites' },
           ].map((item) => (
             <button key={item.id} onClick={() => { setActiveTab(item.id as any); setIsMobileMenuOpen(false); }} className={`w-full flex items-center rounded-2xl transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20' : 'hover:bg-white/5 hover:text-white'} ${isSidebarOpen ? 'px-4 py-4 space-x-3' : 'px-0 py-4 justify-center'}`}>
               <item.icon size={20} /> <span className={`font-bold ${!isSidebarOpen ? 'lg:hidden' : ''}`}>{item.label}</span>
@@ -519,7 +678,9 @@ const App: React.FC = () => {
         <header className="bg-white h-20 border-b flex items-center justify-between px-4 md:px-10 shrink-0 z-10 shadow-sm">
           <div className="flex items-center space-x-3 md:space-x-8">
             <button onClick={toggleMobileMenu} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl"><Menu size={24} /></button>
-            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight shrink-0">{activeTab === 'services' ? 'Inventory' : 'Dashboard'}</h2>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight shrink-0">
+              {activeTab === 'services' ? 'Inventory' : activeTab === 'hosting-sites' ? 'Hosting Sites' : 'Dashboard'}
+            </h2>
             <div className="hidden lg:relative lg:block flex-1 max-w-lg">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input type="text" placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-6 py-2.5 border-2 border-slate-100 text-slate-900 rounded-2xl text-sm focus:border-indigo-500 bg-slate-50 w-full font-medium outline-none transition-all" />
@@ -573,7 +734,7 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'services' ? (
             <div className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden">
               {/* Desktop View: Table */}
               <div className="hidden lg:block overflow-x-auto">
@@ -676,6 +837,104 @@ const App: React.FC = () => {
                   })
                 )}
               </div>
+            </div>
+          ) : (
+            // HOSTING SITES TAB
+            <div className="space-y-8">
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] border-2 border-indigo-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Initialize Hosting Entity</p>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <div className="flex-1 relative">
+                    <Server className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      type="text" 
+                      placeholder="Enter Plan Name (e.g. Hostinger VPS-1)" 
+                      value={newPlanName}
+                      onChange={(e) => setNewPlanName(e.target.value)}
+                      className="w-full pl-12 pr-6 py-4 border-2 border-slate-100 bg-slate-50 rounded-2xl font-bold text-slate-900 focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                  <button 
+                    onClick={addHostingPlan}
+                    className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all flex items-center justify-center gap-2"
+                  >
+                    <PlusSquare size={18} /> Create Plan
+                  </button>
+                </div>
+              </div>
+
+              {isHostingLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="animate-spin text-indigo-600" size={40} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {hostingPlans.map((plan) => (
+                    <div key={plan.id} className="bg-white rounded-[2rem] border-2 border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                      <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Hosting Node</p>
+                          <h4 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{plan.name}</h4>
+                        </div>
+                        <button onClick={() => deleteHostingPlan(plan.id)} className="p-2.5 text-slate-300 hover:text-rose-600 transition-colors bg-white rounded-full border border-slate-100 shadow-sm">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                      
+                      <div className="flex-1 p-6 space-y-4">
+                        <div className="space-y-3">
+                          <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Associated Websites</p>
+                          <div className="space-y-2">
+                            {hostingSites.filter(s => s.plan_id === plan.id).map(site => (
+                              <div key={site.id} className="group bg-white p-3 rounded-xl border-2 border-slate-50 flex justify-between items-center hover:border-indigo-100 transition-all">
+                                <span className="text-sm font-bold text-slate-800 break-all pr-2">{site.domain_name}</span>
+                                <button onClick={() => deleteHostingSite(site.id)} className="text-slate-300 hover:text-rose-500 transition-all p-1.5 bg-slate-50 rounded-lg lg:opacity-0 lg:group-hover:opacity-100">
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            {hostingSites.filter(s => s.plan_id === plan.id).length === 0 && (
+                              <p className="text-xs text-slate-400 italic py-2">No websites linked yet.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 border-t">
+                        <form 
+                          className="flex gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const input = e.currentTarget.elements.namedItem('domain') as HTMLInputElement;
+                            if (input.value.trim()) {
+                               addHostingSite(plan.id, input.value.trim());
+                               input.value = '';
+                            }
+                          }}
+                        >
+                          <input 
+                            name="domain"
+                            placeholder="website.com" 
+                            required
+                            className="flex-1 px-4 py-2.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:border-indigo-500 outline-none"
+                          />
+                          <button type="submit" className="bg-indigo-600 text-white p-2.5 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100">
+                            <Plus size={18} />
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  ))}
+                  {hostingPlans.length === 0 && (
+                    <div className="md:col-span-3 py-20 text-center">
+                      <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                        <Layers size={32} />
+                      </div>
+                      <p className="font-black text-slate-400 uppercase tracking-widest text-[10px]">Your hosting infrastructure is empty</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

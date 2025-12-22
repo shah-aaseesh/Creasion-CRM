@@ -65,6 +65,22 @@ export interface Credential {
   notes: string;
 }
 
+// Independent Feature: Hosting Sites
+export interface HostingPlan {
+  id: string;
+  name: string;
+  user_id: string;
+  created_at: string;
+}
+
+export interface HostingSite {
+  id: string;
+  plan_id: string;
+  domain_name: string;
+  user_id: string;
+  created_at: string;
+}
+
 export interface AppData {
   clients: Client[];
   services: Service[];
